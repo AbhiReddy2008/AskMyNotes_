@@ -1,24 +1,23 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import requests
 
 
 app = FastAPI(
     title="Student Question API",
-    description="A simple FastAPI backend for a React application",
+    description="FastAPI backend for AskMyNotes",
     version="1.0.0",
 )
 
 
-# React runs on port 5173.
-# FastAPI runs on port 8000.
-# Since these are different origins, CORS permission is required.
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-        "https://askmynotes-frontend-tv9g.onrender.com"
+        "https://askmynotes-frontend-tv9g.onrender.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -51,15 +50,43 @@ def health_check():
 
 @app.post("/ask", response_model=QuestionResponse)
 def ask_question(request: QuestionRequest):
+
     cleaned_question = request.question.strip()
 
     if not cleaned_question:
         return QuestionResponse(
             question="",
-            answer="Please enter a question.",
+            answer="Please enter a question."
         )
 
-    return QuestionResponse(
-        question=cleaned_question,
-        answer=f'Your question "{cleaned_question}" was received successfully.',
-    )
+    # Send question to classifier
+    classifier_url = "https://askmynotes-classifier-xyh0.onrender.com/predict"
+
+    try:
+        classifier_response = requests.post(
+            classifier_url,
+            json={
+                "question": cleaned_question
+            },
+            timeout=60
+        )
+
+        classifier_response.raise_for_status()
+
+        classifier_data = classifier_response.json()
+
+        predicted_category = classifier_data["predicted_category"]
+
+        return QuestionResponse(
+            question=cleaned_question,
+            answer=f"Predicted category: {predicted_category}"
+        )
+
+    except requests.exceptions.RequestException as e:
+
+        print("Classifier error:", e)
+
+        return QuestionResponse(
+            question=cleaned_question,
+            answer="Unable to connect to the classifier."
+        )
